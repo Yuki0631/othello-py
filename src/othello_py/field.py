@@ -1,4 +1,5 @@
 from typing import List, Optional, Tuple
+import copy
 
 class Piece:
     """
@@ -105,3 +106,26 @@ class OthelloField:
         for fx, fy in flips:
             self.board[fy][fx].owner = owner # ひっくり返る石のオーナーを変更
         return len(flips)
+        
+    def get_legal_moves(self, owner: int):
+        """
+        legal_moves のエイリアスとして実装
+        指定プレイヤーの合法手を取得する
+        """
+        return self.legal_moves(owner)
+
+    def make_move(self, move: Tuple[int,int], owner: int) -> 'OthelloField':
+        """
+        この手を打った後の新しい盤面を返す。
+        盤面を丸ごとコピーして place() を実行します。
+        """
+        new_field = copy.deepcopy(self)
+        x, y = move
+        new_field.place(x, y, owner)
+        return new_field
+
+    def is_game_over(self) -> bool:
+        """
+        両プレイヤーに合法手がなければゲーム終了とみなす。
+        """
+        return not self.legal_moves(0) and not self.legal_moves(1)
