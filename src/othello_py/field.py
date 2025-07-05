@@ -63,6 +63,9 @@ class OthelloField:
         '''
         指定位置に石を置いたときに、ひっくり返る石の座標をsh得する関数
         '''
+        if not self.check_in_bounds(x, y) or self.board[y][x] is not None:
+            return [] # 盤面外または既に石が置かれている場合は空リストを返す
+        
         dirs = [(-1,-1), (0,-1), (1,-1), (-1,0), (1,0), (-1,1), (0,1), (1,1)] # 8方向
         flips: List[Tuple[int,int]] = []
         for dx, dy in dirs:
