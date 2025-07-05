@@ -129,3 +129,16 @@ class OthelloField:
         両プレイヤーに合法手がなければゲーム終了とみなす
         """
         return not self.legal_moves(0) and not self.legal_moves(1)
+
+    def count_pieces(self, owner: int) -> int:
+        """
+        指定プレイヤーの石の数をカウントする
+        owner: 0=黒, 1=白
+        戻り値: 石の数
+        """
+        sum = 0
+        for row in self.board:
+            for piece in row:
+                if piece is not None and piece.owner == owner:
+                    sum += 1
+        return sum
