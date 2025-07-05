@@ -91,4 +91,4 @@ class MinimaxPlayer(Player):
 
 if __name__=="__main__":
     host,port = sys.argv[1], int(sys.argv[2]) # コマンドライン引数からホストとポートを取得
-    play_game(host, port, MinimaxPlayer()) # ランダムプレイヤーでゲームを開始
+    play_game(host, port, MinimaxPlayer()) # ミニマックスプレイヤーでゲームを開始
