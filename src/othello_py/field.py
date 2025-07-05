@@ -116,8 +116,8 @@ class OthelloField:
 
     def make_move(self, move: Tuple[int,int], owner: int) -> 'OthelloField':
         """
-        この手を打った後の新しい盤面を返す。
-        盤面を丸ごとコピーして place() を実行します。
+        この手を打った後の新しい盤面を返す
+        盤面を丸ごとコピーして place() を実行する
         """
         new_field = copy.deepcopy(self)
         x, y = move
@@ -126,6 +126,6 @@ class OthelloField:
 
     def is_game_over(self) -> bool:
         """
-        両プレイヤーに合法手がなければゲーム終了とみなす。
+        両プレイヤーに合法手がなければゲーム終了とみなす
         """
         return not self.legal_moves(0) and not self.legal_moves(1)
