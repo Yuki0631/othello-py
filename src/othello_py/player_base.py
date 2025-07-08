@@ -79,6 +79,7 @@ class Player(abc.ABC):
         self.player_id: int = None
         self.illegal_count: int = 0
         self.opponent_illegal_count: int = 0
+        self.last_flip_count: int = 0
 
     def initialize(self, field: Field, player_id: int):
         '''
@@ -102,7 +103,7 @@ class Player(abc.ABC):
     def handle_message(self, msg: str):
         """
         サーバからのメッセージを処理する関数
-        盤面情報を更新する
+        盤面情報と石がいくつひっくり返ったかを更新する
         """
         parts = msg.split() # メッセージを空白で分割
         cmd = parts[0] # コマンドを取得
@@ -116,4 +117,9 @@ class Player(abc.ABC):
                 if ch == str(self.player_id): # もし、その文字が自分のIDと一致する場合
                     y,x = divmod(idx,size) # その文字の位置を計算
                     self.field.board[y][x] = Piece(self.player_id) # その位置に自分の石を置く
+            return
+        if cmd == Command.FLIP_COUNT.value:
+            self.last_flip_count = int(parts[1])
+            return
+
         return
