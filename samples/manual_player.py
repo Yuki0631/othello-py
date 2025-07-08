@@ -19,13 +19,19 @@ class ManualPlayer(Player):
         print("Your view:")
         for y in range(size):
             row = visible[y]
-            print(f"{y} " + " ".join("●" if c==self.player_id else "." for c in row))
+            print(f"{y} " + " ".join("●" if c == self.player_id else "." for c in row))
         print("   " + " ".join(str(x) for x in range(size)))
         print(f"Illegal count → You: {self.illegal_count}, Opponent: {self.opponent_illegal_count}")
-        raw = input("Enter move as 'x y' (Enter to pass): ").strip()
-        if not raw: return "PASSED"
+        
         try:
-            x,y = map(int, raw.split())
+            x_raw = input("Enter x (Enter to pass): ").strip()
+            if not x_raw:
+                return "PASSED"
+            y_raw = input("Enter y (Enter to pass): ").strip()
+            if not y_raw:
+                return "PASSED"
+            x = int(x_raw)
+            y = int(y_raw)
             return f"MOVE {x} {y}"
         except:
             return "PASSED"
