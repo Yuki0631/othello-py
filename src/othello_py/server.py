@@ -3,7 +3,7 @@ import logging
 from .field import OthelloField
 from .protocol import Command, serialize_board, parse_move, Protocol
 
-MAX_ILLEGAL = 100 # 不正手の最大カウント
+MAX_ILLEGAL = 1000 # 不正手の最大カウント
 
 def handle_game(clients, quiet=False):
     '''
@@ -70,7 +70,8 @@ def handle_game(clients, quiet=False):
                 continue
 
         # 正常手レスポンス
-        print(f"{Command.FLIP_COUNT.value} {flips}", file=active)
+        for cl in clients:
+            print(f"{Command.FLIP_COUNT.value} {flips}", file=cl)
         print(serialize_board(field.get_visible_board(curr)), file=active)
         print(serialize_board(field.get_visible_board(opp)),  file=passive)
 
