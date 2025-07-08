@@ -20,7 +20,7 @@ class ManualPlayer(Player):
         for y in range(size):
             row = visible[y]
             print(f"{y} " + " ".join("●" if c == self.player_id else "." for c in row))
-        print("   " + " ".join(str(x) for x in range(size)))
+        print("  " + " ".join(str(x) for x in range(size)))
         print(f"Illegal count → You: {self.illegal_count}, Opponent: {self.opponent_illegal_count}")
         
         try:
