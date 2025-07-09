@@ -142,3 +142,11 @@ class OthelloField:
                 if piece is not None and piece.owner == owner:
                     sum += 1
         return sum
+    
+    def get_board_state(self) -> List[List[Optional[int]]]:
+        """
+        現在の盤面の状態を数値形式で返す。
+        None = 空、0 = 黒、1 = 白
+        """
+        return [[None if cell is None else cell.owner for cell in row]for row in self.board]
+    

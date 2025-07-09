@@ -1,69 +1,63 @@
 import abc
 import socket
+import asyncio
+import inspect
+import websockets
 from .piece import Piece
 from .field import OthelloField as Field
 from .protocol import Command, Protocol
 
-def play_game(host: str, port: int, player: 'Player'):
-    '''
-    プレイヤーとサーバを接続して対局する関数
-    '''
-    with socket.create_connection((host, port)) as sock: # サーバに接続
-        conn = sock.makefile(mode='rw', buffering=1, encoding='utf-8') # テキストモードで読み書きするファイルオブジェクトを作
-                                                                       # 文字化エンコーディングはUTF-8
-
-        # IDを受信する
-        parts = conn.readline().strip().split() # サーバからの最初の行を読み込み、空白で分割
+async def play_game_ws(uri: str, player: 'Player'):
+    async with websockets.connect(uri) as ws:
+        # ID受信
+        msg = await ws.recv()
+        parts = msg.split()
         if parts[0] != Command.ID.value:
-            raise RuntimeError(f"Expected ID, got {parts!r}") # コマンドがIDでない場合はエラー
+            raise RuntimeError("Expected ID from server")
         player_id = int(parts[1])
+        player.initialize(player.field or Field(), player_id)  # フィールドは適宜用意
 
-        # 挨拶をする
-        print(conn.readline().strip()) # サーバからの挨拶を読み込み、表示
+        # 挨拶受信
+        greeting = await ws.recv()
+        print(greeting)
 
-        # 盤面初期化を待つ
-        init = None
+        # 初期盤面受信
         while True:
-            l = conn.readline() # サーバからの次の行を読み込む
-            if not l: raise RuntimeError("Closed before BOARD")
-            if l.startswith(Command.BOARD.value):
-                init = l.strip()
+            msg = await ws.recv()
+            print("初期盤面受信中:", msg)  # ← これを入れてデバッグ
+            if msg.startswith(Command.BOARD.value):
+                player.handle_message(msg)
                 break
-
-        # 盤面を初期化する
-        field = Field()
-        player.initialize(field, player_id)
-        player.handle_message(init)
 
         # メインループ
         while True:
-            l = conn.readline()
-            if not l:
-                print("Connection closed")
-                break
-            msg = l.strip()
-
+            msg = await ws.recv()
             if msg in (Protocol.you_win, Protocol.you_lose, Protocol.draw):
                 print(msg)
                 break
 
-            # ILLEGAL_COUNT の処理
             if msg.startswith(Command.ILLEGAL_COUNT.value):
                 parts = msg.split()
                 player.illegal_count = int(parts[1])
                 player.opponent_illegal_count = int(parts[2])
                 print(f"Illegal moves → You: {parts[1]}, Opponent: {parts[2]}")
+
+                # 直後のBOARDも受け取って盤面更新
+                board_msg = await ws.recv()
+                player.handle_message(board_msg)
+
+                # 再度打つ（再帰やループでなく、明示的にactionして送信）
+                print("→ Re-attempting action after illegal move")
+                mv = await player.action() if asyncio.iscoroutinefunction(player.action) else player.action()
+                await ws.send(mv)
                 continue
 
-            player.handle_message(msg) # プレイヤーにメッセージを処理させる
+            player.handle_message(msg)
 
             if msg == "your turn":
-                mv = player.action() # プレイヤーのアクションを取得
-                print(mv, file=conn)
-                conn.flush()
-            if msg.startswith(Command.GAME_OVER.value):
-                print("=== Game Over ===")
-                break
+                mv = await player.action() if asyncio.iscoroutinefunction(player.action) else player.action()
+                await ws.send(mv)
+
 
 class Player(abc.ABC):
     """
@@ -85,6 +79,7 @@ class Player(abc.ABC):
         '''
         盤面とプレイヤーIDを初期化する関数
         '''
+        print(f">> initialize() called: player_id = {player_id}")
         self.field = field
         self.player_id = player_id
 
@@ -95,29 +90,37 @@ class Player(abc.ABC):
         """
 
     @abc.abstractmethod
+    def action(self):
+        """
+        着手を返す（同期またはasync関数）
+        """
+    
+    """
+    @abc.abstractmethod
     def action(self) -> str:
-        """
-        プレイヤーのアクションを返す関数
-        """
+        
+        #プレイヤーのアクションを返す関数
+    """
 
     def handle_message(self, msg: str):
-        """
-        サーバからのメッセージを処理する関数
-        盤面情報と石がいくつひっくり返ったかを更新する
-        """
-        parts = msg.split() # メッセージを空白で分割
-        cmd = parts[0] # コマンドを取得
-        if cmd == Command.BOARD.value: # コマンドがBOARDの場合
-            flat = parts[1] # 盤面のフラットな文字列を取得
-            size = Field.SIZE # 盤面のサイズを取得 今回は6
+        parts = msg.split()
+        cmd = parts[0]
+        if cmd == Command.BOARD.value:
+            flat = parts[1]
+            size = Field.SIZE
             for y in range(size):
                 for x in range(size):
-                    self.field.board[y][x] = None # 盤面を空にする
-            for idx,ch in enumerate(flat): # 盤面の文字列を走査
-                if ch == str(self.player_id): # もし、その文字が自分のIDと一致する場合
-                    y,x = divmod(idx,size) # その文字の位置を計算
-                    self.field.board[y][x] = Piece(self.player_id) # その位置に自分の石を置く
+                    self.field.board[y][x] = None
+            for idx, ch in enumerate(flat):
+                y, x = divmod(idx, size)
+                if ch == '.':
+                    self.field.board[y][x] = None
+                elif ch == '0':
+                    self.field.board[y][x] = Piece(0)
+                elif ch == '1':
+                    self.field.board[y][x] = Piece(1)
             return
+
         if cmd == Command.FLIP_COUNT.value:
             self.last_flip_count = int(parts[1])
             return

@@ -2,59 +2,6 @@ import socket
 import logging
 from .field import OthelloField
 from .protocol import Command, serialize_board, parse_move, Protocol
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-import argparse, logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-import threading
-
-# --- FastAPI WebSocketサーバの実装 ---
-
-app = FastAPI()
-
-# CORS設定
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-player_ws = None  # manual_player_ws用WebSocket接続
-ui_ws = None      # UI用WebSocket接続
-
-@app.websocket("/ws/player")
-async def websocket_player(ws: WebSocket):
-    global player_ws
-    await ws.accept()
-    player_ws = ws
-    print("player WS connected")
-    try:
-        while True:
-            data = await ws.receive_text()
-            if ui_ws:
-                await ui_ws.send_text(data)  # UIへ中継
-    except WebSocketDisconnect:
-        print("player WS disconnected")
-        player_ws = None
-
-@app.websocket("/ws/ui")
-async def websocket_ui(ws: WebSocket):
-    global ui_ws
-    await ws.accept()
-    ui_ws = ws
-    print("UI WS connected")
-    try:
-        while True:
-            data = await ws.receive_text()
-            if player_ws:
-                await player_ws.send_text(data)  # playerへ中継
-    except WebSocketDisconnect:
-        print("UI WS disconnected")
-        ui_ws = None
 
 MAX_ILLEGAL = 1000 # 不正手の最大カウント
 
@@ -146,42 +93,22 @@ def handle_game(clients, quiet=False):
         turn += 1
 
 def server_main(host: str, port: int, games: int = 1, *, quiet=False):
-    with socket.create_server((host, port)) as srv:
+    """
+    Othelloサーバーのメイン関数
+    host: ホスト名またはIPアドレス
+    port: ポート番号 (デフォルトでは8000)
+    games: ゲームの回数（デフォルトは1）
+    quiet: Trueならサーバ側のログを抑制する
+    """
+    with socket.create_server((host, port)) as srv: # サーバーソケットを作成
         for _ in range(games):
-            logging.info(f"Waiting for players at {host}:{port}")
+            logging.info(f"Waiting for players at {host}:{port}") 
             clients = []
             for i in range(2):
-                conn, addr = srv.accept()
+                conn, addr = srv.accept() # クライアントからの接続を待つ
                 cl = conn.makefile(mode='rw', buffering=1, encoding='utf-8')
                 logging.info(f"Player {i+1} connected from {addr}")
                 clients.append(cl)
-            handle_game(clients, quiet=quiet)
-            for cl in clients:
+            handle_game(clients, quiet=quiet)  
+            for cl in clients: 
                 cl.close()
-
-# --- サーバ起動部分の切り分け ---
-
-def main():
-    p = argparse.ArgumentParser(__doc__)
-    p.add_argument("--host", default="0.0.0.0")
-    p.add_argument("--port", type=int, default=8000)
-    p.add_argument("--games", type=int, default=1)
-    p.add_argument("--quiet", action="store_true")
-    p.add_argument("--mode", choices=["tcp", "ws"], default="tcp", help="tcp=既存TCPサーバ, ws=FastAPI起動")
-    args = p.parse_args()
-
-    logging.basicConfig(
-        level=logging.ERROR if args.quiet else logging.INFO,
-        format="[%(asctime)s] %(levelname)s: %(message)s"
-    )
-
-    if args.mode == "tcp":
-        # 既存TCPソケットサーバを起動
-        server_main(args.host, args.port, args.games, quiet=args.quiet)
-    else:
-        # FastAPIを起動（uvicornなどから起動想定）
-        import uvicorn
-        uvicorn.run("src.othello_py.server:app", host=args.host, port=args.port, reload=True)
-
-if __name__ == "__main__":
-    main()
