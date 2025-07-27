@@ -18,12 +18,23 @@ class InfoSet:
         
 
     def possible_moves(self, player_id: int) -> set[Move]:
-        """
-        少なくとも1つの世界で可能な着手を返す
-        """
+        '''
+        すべての世界において、指定プレイヤーが打てる合法手を取得する
+        '''
+        if not self.worlds:
+            return set()
+        common = set(self.worlds[0].get_legal_moves(player_id))
+        for world in self.worlds[1:]:
+            common &= set(world.get_legal_moves(player_id))
+        return common
+    
+    def union_noves(self, player_id: int) -> set[Move]:
+        '''
+        一つの世界において、指定プレイヤーが打てる合法手を取得する
+        '''
         moves = set()
         for world in self.worlds:
-            moves |= set(world.get_legal_moves(player_id)) # 合法手を取得して既存の集合に追加する
+            moves |= set(world.get_legal_moves(player_id))
         return moves
     
 def evaluate_world(state: BoardState, player_id: int) -> int:
@@ -120,9 +131,13 @@ def choose_move(info: InfoSet, depth: int, player_id: int) -> Move | None:
     player_id: プレイヤーID
     戻り値: 最適な着手 (Move) または None
     """
-    bast_val = float('-inf')
+    best_val = float('-inf')
     best_move = None
-    for move in info.possible_moves(player_id):
+    candidate_moves = info.possible_moves(player_id)
+    if not candidate_moves:
+        candidate_moves = info.union_noves(player_id) # 合法手がない場合は、全ての合法手を候補にする
+    
+    for move in candidate_moves: # 各候補手を評価
         next_worlds = set()
         for world in info.worlds:
             if move in world.get_legal_moves(player_id):
@@ -132,8 +147,8 @@ def choose_move(info: InfoSet, depth: int, player_id: int) -> Move | None:
         if not next_worlds:
             continue
         value = min_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id)
-        if value > bast_val:
-            bast_val = value
+        if value > best_val:
+            best_val = value
             best_move = move
     return best_move
 
@@ -141,15 +156,17 @@ class IsMinimaxPlayer(Player):
     """
     情報集合ミニマックスアルゴリズムを使用して着手を選ぶプレイヤークラス
     """
-    def __init__(self, depth=3):
+    def __init__(self, depth=4):
         """
         コンストラクタ
-        depth: ミニマックスの探索の深さ (デフォルト値は3)
+        depth: ミニマックスの探索の深さ (デフォルト値は4)
         """
         super().__init__()
         self.depth = depth
         self.info_set: InfoSet = None # 情報集合を初期化する
         self.just_moved = False # 最後の着手が自分の手かどうか
+        self._pending_move: Move | None = None # 直前に送った手
+        self._info_snapshot: InfoSet | None = None # 直前の情報集合のスナップショット
     
     def name(self) -> str:
         return "IsMinimaxPlayer"
@@ -166,20 +183,11 @@ class IsMinimaxPlayer(Player):
             self.just_moved = False
             return "PASSED"
         
-        x, y = move
+        self._pending_move = move
+        self._info_snapshot = copy.deepcopy(self.info_set) # 現在の情報集合をスナップショットとして保存
 
-        new_worlds: list[BoardState] = []
-        for world in self.info_set.worlds:
-            if move in world.get_legal_moves(self.player_id):
-                new_world = copy.deepcopy(world)
-                new_world.place(x, y, self.player_id)
-                new_worlds.append(new_world)
-        if new_worlds:
-            self.info_set = InfoSet(new_worlds) # 新しい世界を情報集合に更新する
-         
-        self.just_moved = True # 最後の着手が自分の手であることを記録する
-        print(f"Chosen move: {x} {y}")
-        return f"MOVE {x} {y}"
+        print(f"Chosen move: {move[0]} {move[1]}")
+        return f"MOVE {move[0]} {move[1]}"
     
     def handle_message(self, msg: str) -> None:
         """
@@ -189,7 +197,18 @@ class IsMinimaxPlayer(Player):
         parts = msg.split()
         cmd = parts[0]
 
-        if cmd == Command.BOARD.value:
+        if cmd == Command.ILLEGAL_COUNT.value:
+            if self._pending_move is not None and self._info_snapshot is not None:
+                move = self._pending_move
+                legal_worlds = [
+                    world for world in self._info_snapshot.worlds
+                    if move not in world.get_legal_moves(self.player_id)
+                ]
+                self.info_set = InfoSet(legal_worlds or self._info_snapshot.worlds)
+            self._pending_move = self._info_snapshot = None # スナップショットをクリア
+            return
+
+        elif cmd == Command.BOARD.value:
             super().handle_message(msg) # player_base.pyのhandle_messageを呼び出して盤面を更新
             if self.info_set is None:
                 # 初回のBOARD受信時にのみInfoSetを初期生成する
@@ -198,58 +217,74 @@ class IsMinimaxPlayer(Player):
             else:
                 if self.just_moved:
                     self.just_moved = False # 最後の着手が自分の手であった場合はフラグをリセットする
+                    self._pending_move = self._info_snapshot = None # スナップショットをクリア
                 else:
                     # 相手の手を仮定して情報集合を更新する
                     self._update_info_set()
 
         elif cmd == Command.FLIP_COUNT.value:
-            parts = msg.split()
             self.last_flip_count = int(parts[1]) # 最後のひっくり返った石の数を更新
+
+            if self._pending_move is not None and self.last_flip_count > 0:
+                x, y = self._pending_move
+                worlds = []
+                for world in self.info_set.worlds:
+                    if (x, y) in world.get_legal_moves(self.player_id):
+                        new_world = copy.deepcopy(world)
+                        new_world.place(x, y, self.player_id)
+                        worlds.append(new_world)
+                if worlds:
+                    self.info_set = InfoSet(worlds)
+                else:
+                    print("Warning: No valid worlds after flip count update.")
+                self._pending_move = self._info_snapshot = None # スナップショットをクリア
+                self.just_moved = True
+            
+            else:
+                # 最後の着手が自分の手でなかった場合は、情報集合を更新しない
+                self.just_moved = False
+            return
+
         else:
             super().handle_message(msg)
 
 
     def _update_info_set(self):
-        """
-        情報集合を更新する関数
-        現在の盤面と相手の手を考慮して情報集合を更新する
-        """
         new_worlds: list[BoardState] = []
-        # サーバから返ってきた、可読な盤面情報とひっくり返った石の数を使って、情報集合を更新する
         visible_board = self.field.get_visible_board(self.player_id)
         flip_count = self.last_flip_count
 
-        # まずパスのケースを処理
         if flip_count == 0:
-            # 相手にパスがあった場合、相手に合法手なかった世界だけを残す
+            # パスは合法手の有無に依らず起こり得るので、可視盤面の不変性で整合性を取る
             for world in self.info_set.worlds:
-                if not world.get_legal_moves(1 - self.player_id):
+                if world.get_visible_board(self.player_id) == visible_board:
                     new_worlds.append(copy.deepcopy(world))
             if new_worlds:
                 self.info_set = InfoSet(new_worlds)
-                return
-        
-            # 一致する世界がない場合は、古い情報集合をそのまま保持する
+            # 一致が無ければ、古い集合を保持（破綻防止）
             return
 
         for world in self.info_set.worlds:
-            # worldは過去における仮説的な盤面情報を保持している
-            for move in world.get_legal_moves(opp := 1 - self.player_id):
-                # 相手の手を仮定して新しい盤面を生成
+            opp = 1 - self.player_id
+            for move in world.get_legal_moves(opp):
                 new_world = copy.deepcopy(world)
-                flips = new_world.place(move[0], move[1], opp) # 相手の手を適用してひっくり返る石の数を取得
-
-                # 可読な盤面とひっくり返った石の数を考慮して、情報集合に追加
+                flips = new_world.place(move[0], move[1], opp)
                 if new_world.get_visible_board(self.player_id) == visible_board and flips == flip_count:
                     new_worlds.append(new_world)
-        
+
         if new_worlds:
             self.info_set = InfoSet(new_worlds)
         else:
-            # 相手の手が合法手でない場合は、情報集合をそのまま保持し、
-            # 警告を表示する
-            print("No valid moves found for opponent, keeping current state.")
-    
+            # 整合性が取れない場合は、現在の情報集合を保持
+            for world in self.info_set.worlds:
+                new_world = copy.deepcopy(world)
+                if new_world.get_visible_board(self.player_id) == visible_board:
+                    new_worlds.append(new_world)
+            if new_worlds:
+                self.info_set = InfoSet(new_worlds)
+            else:
+                print("Warning: No matching worlds found after opponent's move. Keeping current info set.")
+
 if __name__=="__main__":
     host,port = sys.argv[1], int(sys.argv[2]) # コマンドライン引数からホストとポートを取得
     play_game(host, port, IsMinimaxPlayer()) # 情報集合ミニマックスプレイヤーでゲームを開始
