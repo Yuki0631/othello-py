@@ -14,15 +14,34 @@ class RandomPlayer(Player):
     def __init__(self, seed=None):
         super().__init__()
         self.rng = random.Random(seed)
+        self._prev_illegal = 0        
+        self._consec_illegal = 0
 
     def name(self) -> str:
         return "random-player"
+    
+    def _update_illegal_streak(self) -> None:
+        """ILLEGAL_COUNT を監視して連続不正手回数を更新する"""
+        if self.illegal_count > self._prev_illegal:
+            # 今ターンも不正手だった
+            self._consec_illegal += 1
+        else:
+            # 合法手が通った or パス成功でストリークをリセット
+            self._consec_illegal = 0
+        self._prev_illegal = self.illegal_count
 
     def action(self) -> str:
         """
         ランダムに着手を選ぶ関数
         盤面のサイズに基づいてランダムな座標を生成し、MOVEコマンドを返す
         """
+        self._update_illegal_streak()
+
+        # 30 連続不正手 → パス
+        if self._consec_illegal >= 30:
+            print("* auto-pass after 30 consecutive illegal moves *")
+            return "PASSED"
+
         size = self.field.SIZE # 盤面のサイズを取得
         # 空きマスを取得（自分・相手の石が置かれていないマス）
         empty_cells = []
@@ -33,6 +52,7 @@ class RandomPlayer(Player):
         # 空きマスがなければパス
         if not empty_cells:
             return "PASSED"
+
         # ランダムに選択
         x, y = self.rng.choice(empty_cells)
         print(f"Illegal count → You: {self.illegal_count}, Opp: {self.opponent_illegal_count}")
