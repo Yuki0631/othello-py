@@ -53,6 +53,7 @@ def play_game(host: str, port: int, player: 'Player'):
                 player.illegal_count = int(parts[1])
                 player.opponent_illegal_count = int(parts[2])
                 print(f"Illegal moves → You: {parts[1]}, Opponent: {parts[2]}")
+                player.handle_message(msg)
                 continue
 
             player.handle_message(msg) # プレイヤーにメッセージを処理させる
