@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ついたてオセロ</title>
+  <style>
+    canvas {
+      border: 2px solid black;
+      display: block;
+      margin: 20px auto;
+    }
+  </style>
+</head>
+<body>
+  
+  <label style="display: block; text-align: center; margin-top: 10px;">
+    <input type="checkbox" id="toggleLegal">
+    合法手を表示する
+  </label>
+  <label style="display: block; text-align: center; margin-top: 10px;">
+    <input type="checkbox" id="toggleOpponent">
+    相手のコマ（白）を表示する
+  </label>
+
+  
+
+  <canvas id="board" width="360" height="360"></canvas>
+  <div id="gameResult" style="text-align:center; margin-top:10px; font-weight:bold; font-size:1.2em; color:red;"></div>
+  <div id="illegalCount" style="text-align:center; margin-top:10px; font-weight:bold; font-size:1.2em; color:red;"></div>
+
+  
+  <script>
+    const canvas = document.getElementById("board");
+    const ctx = canvas.getContext("2d");
+
+    const SIZE = 6;
+    const CELL_SIZE = canvas.width / SIZE;
+
+    let board = Array.from({ length: SIZE }, () => Array(SIZE).fill(null));
+    let legalMoves = [];
+    let websocket_ui;
+
+    function drawBoard() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const showOpponent = document.getElementById("toggleOpponent").checked;
+
+      for (let y = 0; y < SIZE; y++) {
+        for (let x = 0; x < SIZE; x++) {
+          ctx.fillStyle = "#228B22";
+          ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+
+          ctx.strokeStyle = "black";
+          ctx.strokeRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+
+          if (board[y][x] === 0) drawPiece(x, y, "black");
+          if (board[y][x] === 1 && showOpponent) drawPiece(x, y, "white");  // ← ここで制御
+        }
+      }
+
+      const showLegal = document.getElementById("toggleLegal").checked;
+        if (showLegal) {
+            for (const [x, y] of legalMoves) {
+            ctx.beginPath();
+            ctx.arc(
+                x * CELL_SIZE + CELL_SIZE / 2,
+                y * CELL_SIZE + CELL_SIZE / 2,
+                CELL_SIZE * 0.1,
+                0,
+                Math.PI * 2
+            );
+            ctx.fillStyle = "red";
+            ctx.fill();
+            }
+        }
+    }
+
+    function drawPiece(x, y, color) {
+      ctx.beginPath();
+      ctx.arc(
+        x * CELL_SIZE + CELL_SIZE / 2,
+        y * CELL_SIZE + CELL_SIZE / 2,
+        CELL_SIZE * 0.4,
+        0,
+        Math.PI * 2
+      );
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+    canvas.addEventListener("click", function (event) {
+        const rect = canvas.getBoundingClientRect();
+        const x = Math.floor((event.clientX - rect.left) / CELL_SIZE);
+        const y = Math.floor((event.clientY - rect.top) / CELL_SIZE);
+        handleClick(x, y);
+    });
+
+    function updateGameResult(board, legalMoves) {
+        const resultDiv = document.getElementById("gameResult");
+
+        if (legalMoves.length > 0) {
+            resultDiv.textContent = "";  // 合法手があればメッセージクリア
+            return;
+        }
+
+        // 石の数をカウント（0=黒、1=白）
+        let blackCount = 0;
+        let whiteCount = 0;
+        for (const row of board) {
+            for (const cell of row) {
+            if (cell === 0) blackCount++;
+            else if (cell === 1) whiteCount++;
+            }
+        }
+
+        let message = "";
+        if (blackCount > whiteCount) {
+            message = `ゲーム終了！ あなたの勝ち（${blackCount} 対 ${whiteCount}）`;
+        } else if (whiteCount > blackCount) {
+            message = `ゲーム終了！ AIの勝ち（${whiteCount} 対 ${blackCount}）`;
+        } else {
+            message = `ゲーム終了！ 引き分け（${blackCount} 対 ${whiteCount}）`;
+        }
+        resultDiv.textContent = message;
+    }
+
+    function setupUIWebSocket() {
+        websocket_ui = new WebSocket("ws://localhost:8000/ws/ui");
+
+        websocket_ui.onopen = () => {
+            console.log("WebSocket /ws/ui connected.");
+        };
+        websocket_ui.onmessage = (event) => {
+            const msg = event.data;
+            console.log("WebSocket 受信:", msg); // ← 追加
+
+            // ILLEGAL_COUNT メッセージの処理
+            if (msg.startsWith("ILLEGAL_COUNT")) {
+                console.log("ILLEGAL_COUNT メッセージ処理中"); // ← 追加
+                const parts = msg.split(" ");
+                const yourCount = parts[1];
+                const opponentCount = parts[2];
+                const elem = document.getElementById("illegalCount");
+                console.log("要素取得:", elem); // ← 追加
+                if (elem) {
+                    elem.textContent = `不正手: あなた ${yourCount}回 / 相手 ${opponentCount}回`;
+                } else {
+                    console.warn("illegalCount 要素が見つかりません");
+                }
+                return;
+            }
+
+            // JSON データとして parse できるメッセージの処理
+            try {
+                const data = JSON.parse(msg);
+                if (data.type === "update") {
+                    board = data.board;
+                    legalMoves = data.legal_moves;
+                    drawBoard();
+                    updateGameResult(board, legalMoves);
+                } else if (data.type === "game_over") {
+                    const resultDiv = document.getElementById("gameResult");
+                    resultDiv.textContent = `ゲーム終了！ ${data.message}`;
+                }
+            } catch (e) {
+                console.error("Failed to parse message:", msg);
+            }
+        };
+    }
+
+    let ws_board;
+
+    function setupBoardWebSocket() {
+        ws_board = new WebSocket("ws://localhost:8000/ws/board");
+
+        ws_board.onopen = () => {
+            console.log("WebSocket /ws/board connected.");
+        };
+
+        ws_board.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === "update") {
+                board = data.board;
+                legalMoves = data.legal_moves;
+                drawBoard();
+            }
+        };
+
+        ws_board.onclose = () => {
+            console.log("WebSocket /ws/board closed.");
+        };
+    }
+
+    function isLegalMove(x, y) {
+        return legalMoves.some(m => m[0] === x && m[1] === y);
+    }
+
+    function handleClick(x, y) {
+        if (isLegalMove(x, y)) {
+            console.log("Sending move:", x, y);
+            ws_board.send(`MOVE ${x} ${y}`);
+        } 
+        else {
+            console.log("Illegal move:", x, y);
+            ws_board.send(`ILLEGAL ${x} ${y}`);
+        }
+    }
+
+
+    window.onload = function () {
+        document.getElementById("toggleOpponent").addEventListener("change", drawBoard);
+        document.getElementById("toggleLegal").addEventListener("change", drawBoard);
+        setupBoardWebSocket();
+        setupUIWebSocket();
+        drawBoard();
+    };
+  </script>
+</body>
+</html>
