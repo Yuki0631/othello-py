@@ -129,9 +129,9 @@ async def websocket_player(ws: WebSocket):
                 black = field.count_pieces(0)
                 white = field.count_pieces(1)
                 if black > white:
-                    result_msg = f"黒の勝ち（{black} 対 {white}）"
+                    result_msg = f"あなたの勝ち（{black} 対 {white}）"
                 elif white > black:
-                    result_msg = f"白の勝ち（{white} 対 {black}）"
+                    result_msg = f"AIの勝ち（{white} 対 {black}）"
                 else:
                     result_msg = f"引き分け（{black} 対 {white}）"
 
