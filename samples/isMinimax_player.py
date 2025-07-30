@@ -28,7 +28,7 @@ class InfoSet:
             common &= set(world.get_legal_moves(player_id))
         return common
     
-    def union_noves(self, player_id: int) -> set[Move]:
+    def union_moves(self, player_id: int) -> set[Move]:
         '''
         一つの世界において、指定プレイヤーが打てる合法手を取得する
         '''
@@ -43,11 +43,20 @@ def evaluate_world(state: BoardState, player_id: int) -> int:
     完全情報下での評価関数
     ここでは石差を評価値とする
     """
-    my_pieces = state.count_pieces(player_id)
-    opponent_pieces = state.count_pieces(1 - player_id)
-    return my_pieces - opponent_pieces
+    diff = state.count_pieces(player_id) - state.count_pieces(1 - player_id) # プレイヤーの石の数と相手の石の数の差を計算
+    corner = state.count_corner_pieces(player_id) - state.count_corner_pieces(1 - player_id) # 角の石の数の差を計算
+    edge = state.count_edge_pieces(player_id) - state.count_edge_pieces(1 - player_id) # 辺の石の数の差を計算
+    move = len(state.get_legal_moves(player_id)) - len(state.get_legal_moves(1 - player_id)) # 合法手の数の差を計算
+    return diff + 10 * corner + 5 * edge + 2 * move
 
-def max_value(info: InfoSet, depth: int, player_id: int) -> int:
+    
+
+def evaluate(info: InfoSet, player_id: int) -> int:
+    if not info.worlds:
+        return 0
+    return sum(evaluate_world(world, player_id) for world in info.worlds) / len(info.worlds)
+
+def max_value(info: InfoSet, depth: int, player_id: int, alpha: float = float('-inf'), beta: float = float('inf')) -> int:
     """
     最大化プレイヤーの評価関数
     info: 情報セット
@@ -57,16 +66,15 @@ def max_value(info: InfoSet, depth: int, player_id: int) -> int:
     """
     # 再帰の終了条件または例外的に評価値を返す場合
     if depth == 0 or not info.worlds: # 探索の深さが0または情報セットが空なら評価値を返す
-        return evaluate_world(info.worlds[0], player_id) if info.worlds else 0
+        return evaluate(info, player_id) if info.worlds else 0
     
     if all(world.is_game_over() for world in info.worlds): # 全ての世界がゲーム終了なら評価値を返す
-        return evaluate_world(info.worlds[0], player_id) if info.worlds else 0
+        return evaluate(info, player_id) if info.worlds else 0
     
     if not info.possible_moves(player_id): # 合法手がなければ評価値を返す
-        return evaluate_world(info.worlds[0], player_id) if info.worlds else 0
-    
+        return evaluate(info, player_id) if info.worlds else 0
+
     # 合法手がある場合
-    best_value = float('-inf')
     for move in info.possible_moves(player_id): # 各可能な着手を試す
         next_worlds = set()
         for world in info.worlds:
@@ -76,11 +84,13 @@ def max_value(info: InfoSet, depth: int, player_id: int) -> int:
                 next_worlds.add(new_world) # 新しい盤面を次の世界として追加
         if not next_worlds:
             continue
-        value = min_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id)
-        best_value = max(best_value, value)
-    return best_value
+        value = min_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id, alpha, beta)
+        alpha = max(alpha, value)
+        if alpha >= beta:
+            break
+    return alpha
 
-def min_value(info: InfoSet, depth: int, player_id: int) -> int:
+def min_value(info: InfoSet, depth: int, player_id: int, alpha: float = float('-inf'), beta: float = float('inf')) -> int:
     """
     最小化プレイヤーの評価関数
     info: 情報セット
@@ -90,16 +100,15 @@ def min_value(info: InfoSet, depth: int, player_id: int) -> int:
     """
     # 再帰の終了条件または例外的に評価値を返す場合
     if depth == 0 or not info.worlds: # 探索の深さが0または情報セットが空なら評価値を返す
-        return evaluate_world(info.worlds[0], player_id) if info.worlds else 0
+        return evaluate(info, player_id) if info.worlds else 0
     
     if all(world.is_game_over() for world in info.worlds): # 全ての世界がゲーム終了なら評価値を返す
-        return evaluate_world(info.worlds[0], player_id) if info.worlds else 0
-    
+        return evaluate(info, player_id) if info.worlds else 0
+
     if not info.possible_moves(player_id): # 合法手がなければ評価値を返す
-        return evaluate_world(info.worlds[0], player_id) if info.worlds else 0
-    
+        return evaluate(info, player_id) if info.worlds else 0
+
     # 合法手がある場合
-    best_value = float('inf')
     for move in info.possible_moves(player_id): # 各可能な着手を試す
         next_worlds = set()
         for world in info.worlds:
@@ -109,9 +118,11 @@ def min_value(info: InfoSet, depth: int, player_id: int) -> int:
                 next_worlds.add(new_world) # 新しい盤面を次の世界として追加
         if not next_worlds:
             continue
-        value = max_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id)
-        best_value = min(best_value, value)
-    return best_value
+        value = max_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id, alpha, beta)
+        beta = min(beta, value)
+        if beta <= alpha:
+            break
+    return beta
 
 def is_minimax(info: InfoSet, depth: int, player_id: int) -> int:
     """
@@ -135,7 +146,7 @@ def choose_move(info: InfoSet, depth: int, player_id: int) -> Move | None:
     best_move = None
     candidate_moves = info.possible_moves(player_id)
     if not candidate_moves:
-        candidate_moves = info.union_noves(player_id) # 合法手がない場合は、全ての合法手を候補にする
+        candidate_moves = info.union_moves(player_id) # 合法手がない場合は、全ての合法手を候補にする
     
     for move in candidate_moves: # 各候補手を評価
         next_worlds = set()
