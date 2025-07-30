@@ -1,4 +1,3 @@
-"""
 import socket
 import logging
 from .field import OthelloField
@@ -186,4 +185,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-"""
