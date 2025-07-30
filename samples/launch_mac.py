@@ -13,6 +13,7 @@ manual_proc = subprocess.Popen(["python", "samples/manual_player_ws.py", "localh
 
 time.sleep(1)
 
+
 player_value = input("choose random player -> 0 / minimax player -> 1 : ")
 
 try:
