@@ -7,23 +7,52 @@ import os
 # 1. サーバ（FastAPI）を起動 (WindowsOS)
 server_proc = subprocess.Popen(["-m", "uvicorn", "samples.server:app", "--reload"])
 
-# 2. 少し待機してから manual_player_ws と random_player_ws を起動
+# 2. 少し待機してから manual_player_ws と player を起動
 time.sleep(1)
 manual_proc = subprocess.Popen(["python", "samples/manual_player_ws.py", "localhost", "8000"])
+
 time.sleep(1)
-random_proc = subprocess.Popen(["python", "samples/random_player_ws.py", "localhost", "8000"])
-#isMinimax_proc = subprocess.Popen(["python", "samples/isMinimax_player.py", "localhost", "8000"])
+
+
+player_value = input("choose random player -> 0 / minimax player -> 1 : ")
+
+try:
+    player_choice = int(player_value)
+
+    if player_choice == 0:
+        print("Activating random player...")
+        random_proc = subprocess.Popen(["python", "samples/random_player_ws.py", "localhost", "8000"])
+    elif player_choice == 1:
+        print("Activating minimax player...")
+        isMinimax_proc = subprocess.Popen(["python", "samples/isMinimax_player_ws.py", "localhost", "8000"])
+except ValueError:
+    print("!Invalid value error!")
+
+time.sleep(1)
 
 # 3. index.html をブラウザで開く
 webbrowser.open("http://localhost:8000/")
-
 
 # 4. プロセスが終わるまで待機
 try:
     server_proc.wait()
 except KeyboardInterrupt:
     print("Shutting down...")
-    server_proc.terminate()
-    manual_proc.terminate()
-    random_proc.terminate()
-    #isMinimax_proc.terminate()
+finally:
+    # 各プロセスが起動していれば終了させる
+    if server_proc.poll() is None: # サーバーがまだ実行中なら
+        server_proc.terminate()
+        server_proc.wait(timeout=5) # 終了を待つ
+
+    if manual_proc and manual_proc.poll() is None:
+        manual_proc.terminate()
+        manual_proc.wait(timeout=5)
+
+    if random_proc and random_proc.poll() is None:
+        random_proc.terminate()
+        random_proc.wait(timeout=5)
+
+    if isMinimax_proc and isMinimax_proc.poll() is None:
+        isMinimax_proc.terminate()
+        isMinimax_proc.wait(timeout=5)
+    print("All of the processes finally closed. Thank you for playing!")
