@@ -37,7 +37,7 @@ class InfoSet:
             moves |= set(world.get_legal_moves(player_id))
         return moves
     
-def evaluate_world(state: BoardState, player_id: int) -> int:
+def evaluate_world(state: BoardState, player_id: int, turn: int) -> float:
     """
     盤面の評価関数
     完全情報下での評価関数
@@ -47,16 +47,20 @@ def evaluate_world(state: BoardState, player_id: int) -> int:
     corner = state.count_corner_pieces(player_id) - state.count_corner_pieces(1 - player_id) # 角の石の数の差を計算
     edge = state.count_edge_pieces(player_id) - state.count_edge_pieces(1 - player_id) # 辺の石の数の差を計算
     move = len(state.get_legal_moves(player_id)) - len(state.get_legal_moves(1 - player_id)) # 合法手の数の差を計算
-    return diff + 10 * corner + 5 * edge + 2 * move
-
+    early = max(0, 16 - turn) 
+    late = max(0, turn - 16) 
+    if turn < 30:
+        return (1+0.5*late)*diff + 10 * corner + 5 * edge + 2 * (1 + 0.2*early) *move
+    else:
+        return diff
     
 
-def evaluate(info: InfoSet, player_id: int) -> int:
+def evaluate(info: InfoSet, player_id: int, turn: int) -> float:
     if not info.worlds:
         return 0
-    return sum(evaluate_world(world, player_id) for world in info.worlds) / len(info.worlds)
+    return sum(evaluate_world(world, player_id, turn) for world in info.worlds) / len(info.worlds)
 
-def max_value(info: InfoSet, depth: int, player_id: int, alpha: float = float('-inf'), beta: float = float('inf')) -> int:
+def max_value(info: InfoSet, depth: int, player_id: int, turn: int, alpha: float = float('-inf'), beta: float = float('inf')) -> float:
     """
     最大化プレイヤーの評価関数
     info: 情報セット
@@ -66,13 +70,13 @@ def max_value(info: InfoSet, depth: int, player_id: int, alpha: float = float('-
     """
     # 再帰の終了条件または例外的に評価値を返す場合
     if depth == 0 or not info.worlds: # 探索の深さが0または情報セットが空なら評価値を返す
-        return evaluate(info, player_id) if info.worlds else 0
+        return evaluate(info, player_id, turn) if info.worlds else 0
     
     if all(world.is_game_over() for world in info.worlds): # 全ての世界がゲーム終了なら評価値を返す
-        return evaluate(info, player_id) if info.worlds else 0
-    
+        return evaluate(info, player_id, turn) if info.worlds else 0
+
     if not info.possible_moves(player_id): # 合法手がなければ評価値を返す
-        return evaluate(info, player_id) if info.worlds else 0
+        return evaluate(info, player_id, turn) if info.worlds else 0
 
     # 合法手がある場合
     for move in info.possible_moves(player_id): # 各可能な着手を試す
@@ -84,13 +88,13 @@ def max_value(info: InfoSet, depth: int, player_id: int, alpha: float = float('-
                 next_worlds.add(new_world) # 新しい盤面を次の世界として追加
         if not next_worlds:
             continue
-        value = min_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id, alpha, beta)
+        value = min_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id, turn+1, alpha, beta)
         alpha = max(alpha, value)
         if alpha >= beta:
             break
     return alpha
 
-def min_value(info: InfoSet, depth: int, player_id: int, alpha: float = float('-inf'), beta: float = float('inf')) -> int:
+def min_value(info: InfoSet, depth: int, player_id: int, turn: int, alpha: float = float('-inf'), beta: float = float('inf')) -> float:
     """
     最小化プレイヤーの評価関数
     info: 情報セット
@@ -100,13 +104,13 @@ def min_value(info: InfoSet, depth: int, player_id: int, alpha: float = float('-
     """
     # 再帰の終了条件または例外的に評価値を返す場合
     if depth == 0 or not info.worlds: # 探索の深さが0または情報セットが空なら評価値を返す
-        return evaluate(info, player_id) if info.worlds else 0
+        return evaluate(info, player_id, turn) if info.worlds else 0
     
     if all(world.is_game_over() for world in info.worlds): # 全ての世界がゲーム終了なら評価値を返す
-        return evaluate(info, player_id) if info.worlds else 0
+        return evaluate(info, player_id, turn) if info.worlds else 0
 
     if not info.possible_moves(player_id): # 合法手がなければ評価値を返す
-        return evaluate(info, player_id) if info.worlds else 0
+        return evaluate(info, player_id, turn) if info.worlds else 0
 
     # 合法手がある場合
     for move in info.possible_moves(player_id): # 各可能な着手を試す
@@ -118,13 +122,13 @@ def min_value(info: InfoSet, depth: int, player_id: int, alpha: float = float('-
                 next_worlds.add(new_world) # 新しい盤面を次の世界として追加
         if not next_worlds:
             continue
-        value = max_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id, alpha, beta)
+        value = max_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id, turn + 1, alpha, beta)
         beta = min(beta, value)
         if beta <= alpha:
             break
     return beta
 
-def is_minimax(info: InfoSet, depth: int, player_id: int) -> int:
+def is_minimax(info: InfoSet, depth: int, player_id: int, turn: int) -> int:
     """
     情報集合ミニマックス法により評価値を計算する関数
     info: 情報セット
@@ -132,9 +136,9 @@ def is_minimax(info: InfoSet, depth: int, player_id: int) -> int:
     player_id: プレイヤーID
     戻り値: 評価値 (整数)
     """
-    return max_value(info, depth, player_id)
+    return max_value(info, depth, player_id, turn)
 
-def choose_move(info: InfoSet, depth: int, player_id: int) -> Move | None:
+def choose_move(info: InfoSet, depth: int, player_id: int, turn: int) -> Move | None:
     """
     情報集合ミニマックス法により最適な着手を選択する関数
     info: 情報セット
@@ -157,7 +161,7 @@ def choose_move(info: InfoSet, depth: int, player_id: int) -> Move | None:
                 next_worlds.add(new_world)
         if not next_worlds:
             continue
-        value = min_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id)
+        value = min_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id, turn + 1)
         if value > best_val:
             best_val = value
             best_move = move
@@ -178,6 +182,7 @@ class IsMinimaxPlayer(Player):
         self.just_moved = False # 最後の着手が自分の手かどうか
         self._pending_move: Move | None = None # 直前に送った手
         self._info_snapshot: InfoSet | None = None # 直前の情報集合のスナップショット
+        self.turn = 0 # ターン数を初期化
     
     def name(self) -> str:
         return "IsMinimaxPlayer"
@@ -189,7 +194,7 @@ class IsMinimaxPlayer(Player):
         if self.info_set is None:
             self.info_set = InfoSet([OthelloField()]) # 初期世界として、相手の石も含めた初期盤面を設定する
         
-        move = choose_move(self.info_set, self.depth, self.player_id)
+        move = choose_move(self.info_set, self.depth, self.player_id, self.turn)
         if move is None:
             self.just_moved = False
             return "PASSED"
@@ -232,6 +237,7 @@ class IsMinimaxPlayer(Player):
                 else:
                     # 相手の手を仮定して情報集合を更新する
                     self._update_info_set()
+            self.turn += 1
 
         elif cmd == Command.FLIP_COUNT.value:
             self.last_flip_count = int(parts[1]) # 最後のひっくり返った石の数を更新
