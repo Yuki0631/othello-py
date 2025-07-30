@@ -20,6 +20,9 @@ def play_game(host: str, port: int, player: 'Player'):
 
         # 挨拶をする
         print(conn.readline().strip()) # サーバからの挨拶を読み込み、表示
+        # 自分の名前をサーバへ通知
+        print(f"{Command.NAME.value} {player.name()}", file=conn)
+        conn.flush()
 
         # 盤面初期化を待つ
         init = None
