@@ -75,11 +75,20 @@ def max_value(info: InfoSet, depth: int, player_id: int, turn: int, alpha: float
     if all(world.is_game_over() for world in info.worlds): # 全ての世界がゲーム終了なら評価値を返す
         return evaluate(info, player_id, turn) if info.worlds else 0
 
-    if not info.possible_moves(player_id): # 合法手がなければ評価値を返す
-        return evaluate(info, player_id, turn) if info.worlds else 0
+    common = info.possible_moves(player_id)
+    union = info.union_moves(player_id)
+
+    if not union: # 合法手がなければ評価値を返す
+        return evaluate(info, player_id, turn)
+    if not common:
+        return min_value(info, depth - 1, 1 - player_id, turn + 1, alpha, beta) # 合法手がない場合は相手の手を評価する
 
     # 合法手がある場合
-    for move in info.possible_moves(player_id): # 各可能な着手を試す
+    moves = common if common else {None} # 合法手がない場合はNoneを候補にする
+    for move in moves: # 各可能な着手を試す
+        if move is None: # パスの場合
+            value = min_value(info, depth - 1, 1 - player_id, turn + 1, alpha, beta)
+            continue
         next_worlds = set()
         for world in info.worlds:
             if move in world.get_legal_moves(player_id): # 合法手であれば、着手を適用した新しい世界を生成
@@ -109,11 +118,20 @@ def min_value(info: InfoSet, depth: int, player_id: int, turn: int, alpha: float
     if all(world.is_game_over() for world in info.worlds): # 全ての世界がゲーム終了なら評価値を返す
         return evaluate(info, player_id, turn) if info.worlds else 0
 
-    if not info.possible_moves(player_id): # 合法手がなければ評価値を返す
-        return evaluate(info, player_id, turn) if info.worlds else 0
+    common = info.possible_moves(player_id)
+    union = info.union_moves(player_id)
+
+    if not union: # 合法手がなければ評価値を返す
+        return evaluate(info, player_id, turn)
+    if not common:
+        return max_value(info, depth - 1, 1 - player_id, turn + 1, alpha, beta) # 合法手がない場合は相手の手を評価する
 
     # 合法手がある場合
-    for move in info.possible_moves(player_id): # 各可能な着手を試す
+    moves = common if common else {None} # 合法手がない場合はNoneを候補にする
+    for move in moves: # 各可能な着手を試す
+        if move is None: # パスの場合
+            value = max_value(info, depth - 1, 1 - player_id, turn + 1, alpha, beta)
+            continue
         next_worlds = set()
         for world in info.worlds:
             if move in world.get_legal_moves(player_id): # 合法手であれば、着手を適用した新しい世界を生成
@@ -148,7 +166,11 @@ def choose_move(info: InfoSet, depth: int, player_id: int, turn: int) -> Move | 
     """
     best_val = float('-inf')
     best_move = None
-    candidate_moves = info.possible_moves(player_id)
+    common = info.possible_moves(player_id) # 指定プレイヤーの合法手を取得
+    union = info.union_moves(player_id) # 指定プレイヤーの全合法手を取得
+    candidate_moves = set(common) # 合法手の候補をセットにする
+    if common != union:
+        candidate_moves.add(None) # パスを候補に追加
     if not candidate_moves:
         candidate_moves = info.union_moves(player_id) # 合法手がない場合は、全ての合法手を候補にする
     
