@@ -15,29 +15,23 @@ def handle_game(clients, quiet=False):
     illegal_counts = [0, 0] # 不正手のカウント
     turn = 0 # ターン数
     passes = [0, 0] # パスのカウント
+    names = ["player 0", "player 1"]
 
     # 初期送信：ID, 挨拶, 初期盤面
     for pid, cl in enumerate(clients): # pidはプレイヤーID, clはクライアントのファイルオブジェクト
         print(f"{Command.ID.value} {pid}", file=cl) # プレイヤーIDを送信
         print(Protocol.greeting, file=cl) # 挨拶を送信
         print(serialize_board(field.get_visible_board(pid)), file=cl) # 初期盤面を送信
+        cl.flush()                          # 送信をフラッシュ
+        line = cl.readline().strip()
+        if line.startswith(Command.NAME.value):
+            names[pid] = line.split(None, 1)[1]
 
     while True:
         curr = turn % 2 # 現在のプレイヤーID（0または1), 2で割った余りを使う
         opp  = 1 - curr # 相手のプレイヤーID（0または1）
         active, passive = clients[curr], clients[opp] # アクティブなプレイヤーとパッシブなプレイヤーのファイルオブジェクト
 
-        # サーバ側コンソール表示
-        logging.info(f"--- Turn {turn} ---")
-        logging.info(f"Illegal counts → P0: {illegal_counts[0]}, P1: {illegal_counts[1]}")
-        for y in range(field.SIZE): # 盤面の行をループ
-            # 各行の文字列を生成
-            row = ''.join(
-                '.' if field.board[y][x] is None
-                else ('○' if field.board[y][x].owner == 0 else '●')
-                for x in range(field.SIZE)
-            )
-            logging.info(row)
 
         # ターン通知
         print("your turn", file=active) # アクティブなプレイヤーにターン通知
@@ -74,6 +68,18 @@ def handle_game(clients, quiet=False):
             print(f"{Command.FLIP_COUNT.value} {flips}", file=cl)
         print(serialize_board(field.get_visible_board(curr)), file=active)
         print(serialize_board(field.get_visible_board(opp)),  file=passive)
+
+        logging.info(f"---Board after turn {turn} (player {curr})---")
+        logging.info(f"{names[0]}: ○, {names[1]}: ●")
+        for y in range(field.SIZE):
+            row = ''.join(
+                '.' if field.board[y][x] is None
+                else ('○' if field.board[y][x].owner == 0 else '●')
+                for x in range(field.SIZE)
+            )
+            logging.info(row)
+        
+        logging.info(f"Illegal counts → P0: {illegal_counts[0]}, P1: {illegal_counts[1]}")
 
         # 終了判定
         no_moves = not field.legal_moves(0) and not field.legal_moves(1) # 両プレイヤーが合法手なしの場合
