@@ -5,7 +5,7 @@
 ターミナル上で実行するためには、 \
 python samples/server.py \
 python samples/hoge_player.py localhost 8000 \
-python samples/hoge_player.py localhost 8000 \
+python samples/huga_player.py localhost 8000 \
 を3つのターミナルで実行すればよい。 \
 何度も一度に対戦させたい場合は、 \
 python samples/server.py --host 127.0.0.1 --port 8000 --games {game数} --quiet \
