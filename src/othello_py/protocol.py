@@ -13,6 +13,7 @@ class Command(Enum):
     GAME_OVER      = "GAME_OVER" # ゲーム終了の通知
     ID             = "ID" # プレイヤーIDの通知
     ILLEGAL_COUNT  = "ILLEGAL_COUNT" # 不正手カウンタの通知
+    NAME           = "NAME" # プレイヤー名の通知
 
 class Protocol:
     """
