@@ -66,7 +66,7 @@ class OthelloField:
         '''
         if not self.check_in_bounds(x, y) or self.board[y][x] is not None:
             return [] # 盤面外または既に石が置かれている場合は空リストを返す
-        
+
         dirs = [(-1,-1), (0,-1), (1,-1), (-1,0), (1,0), (-1,1), (0,1), (1,1)] # 8方向
         flips: List[Tuple[int,int]] = []
         for dx, dy in dirs:
@@ -106,7 +106,7 @@ class OthelloField:
         for fx, fy in flips:
             self.board[fy][fx].owner = owner # ひっくり返る石のオーナーを変更
         return len(flips)
-        
+    
     def get_legal_moves(self, owner: int):
         """
         legal_moves のエイリアスとして実装
@@ -129,7 +129,7 @@ class OthelloField:
         両プレイヤーに合法手がなければゲーム終了とみなす
         """
         return not self.legal_moves(0) and not self.legal_moves(1)
-
+    
     def count_pieces(self, owner: int) -> int:
         """
         指定プレイヤーの石の数をカウントする
@@ -142,3 +142,22 @@ class OthelloField:
                 if piece is not None and piece.owner == owner:
                     sum += 1
         return sum
+    
+    def count_corner_pieces(self, owner: int) -> int:
+        """
+        指定プレイヤーの角の石の数をカウントする
+        owner: 0=黒, 1=白
+        戻り値: 角の石の数
+        """
+        corners = [(0, 0), (0, self.SIZE - 1), (self.SIZE - 1, 0), (self.SIZE - 1, self.SIZE - 1)]
+        return sum(1 for x, y in corners if self.board[y][x] is not None and self.board[y][x].owner == owner)
+    
+    def count_edge_pieces(self, owner: int) -> int:
+        """
+        指定プレイヤーの辺の石の数をカウントする
+        owner: 0=黒, 1=白
+        戻り値: 辺の石の数
+        """
+        edges = [(x, 0) for x in range(1, self.SIZE-1)] + [(x, self.SIZE - 1) for x in range(1, self.SIZE-1)] + \
+                [(0, y) for y in range(1, self.SIZE - 1)] + [(self.SIZE - 1, y) for y in range(1, self.SIZE - 1)] # ただし4隅は除外
+        return sum(1 for x, y in edges if self.board[y][x] is not None and self.board[y][x].owner == owner)
