@@ -1,6 +1,6 @@
 import subprocess, sys, time, re, collections
 
-HOST, PORT, GAMES = "127.0.0.1", 8000, 10
+HOST, PORT, GAMES = "127.0.0.1", 8000, 30
 
 
 results = collections.Counter()
