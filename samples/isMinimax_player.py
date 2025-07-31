@@ -18,25 +18,49 @@ class InfoSet:
         
 
     def possible_moves(self, player_id: int) -> set[Move]:
-        """
-        少なくとも1つの世界で可能な着手を返す
-        """
+        '''
+        すべての世界において、指定プレイヤーが打てる合法手を取得する
+        '''
+        if not self.worlds:
+            return set()
+        common = set(self.worlds[0].get_legal_moves(player_id))
+        for world in self.worlds[1:]:
+            common &= set(world.get_legal_moves(player_id))
+        return common
+    
+    def union_moves(self, player_id: int) -> set[Move]:
+        '''
+        一つの世界において、指定プレイヤーが打てる合法手を取得する
+        '''
         moves = set()
         for world in self.worlds:
-            moves |= set(world.get_legal_moves(player_id)) # 合法手を取得して既存の集合に追加する
+            moves |= set(world.get_legal_moves(player_id))
         return moves
     
-def evaluate_world(state: BoardState, player_id: int) -> int:
+def evaluate_world(state: BoardState, player_id: int, turn: int) -> float:
     """
     盤面の評価関数
     完全情報下での評価関数
     ここでは石差を評価値とする
     """
-    my_pieces = state.count_pieces(player_id)
-    opponent_pieces = state.count_pieces(1 - player_id)
-    return my_pieces - opponent_pieces
+    diff = state.count_pieces(player_id) - state.count_pieces(1 - player_id) # プレイヤーの石の数と相手の石の数の差を計算
+    corner = state.count_corner_pieces(player_id) - state.count_corner_pieces(1 - player_id) # 角の石の数の差を計算
+    edge = state.count_edge_pieces(player_id) - state.count_edge_pieces(1 - player_id) # 辺の石の数の差を計算
+    move = len(state.get_legal_moves(player_id)) - len(state.get_legal_moves(1 - player_id)) # 合法手の数の差を計算
+    early = max(0, 16 - turn) 
+    late = max(0, turn - 16) 
+    if turn < 30:
+        return (1+0.5*late)*diff + 10 * corner + 5 * edge + 2 * (1 + 0.2*early) *move
+    else:
+        return diff
+    
 
-def max_value(info: InfoSet, depth: int, player_id: int) -> int:
+def evaluate(info: InfoSet, player_id: int, turn: int) -> float:
+    if not info.worlds:
+        return 0
+    return sum(evaluate_world(world, player_id, turn) for world in info.worlds) / len(info.worlds)
+
+def max_value(info: InfoSet, depth: int, player_id: int, turn: int, alpha: float = float('-inf'), beta: float = float('inf')) -> float:
     """
     最大化プレイヤーの評価関数
     info: 情報セット
@@ -46,17 +70,25 @@ def max_value(info: InfoSet, depth: int, player_id: int) -> int:
     """
     # 再帰の終了条件または例外的に評価値を返す場合
     if depth == 0 or not info.worlds: # 探索の深さが0または情報セットが空なら評価値を返す
-        return evaluate_world(info.worlds[0], player_id) if info.worlds else 0
+        return evaluate(info, player_id, turn) if info.worlds else 0
     
     if all(world.is_game_over() for world in info.worlds): # 全ての世界がゲーム終了なら評価値を返す
-        return evaluate_world(info.worlds[0], player_id) if info.worlds else 0
-    
-    if not info.possible_moves(player_id): # 合法手がなければ評価値を返す
-        return evaluate_world(info.worlds[0], player_id) if info.worlds else 0
-    
+        return evaluate(info, player_id, turn) if info.worlds else 0
+
+    common = info.possible_moves(player_id)
+    union = info.union_moves(player_id)
+
+    if not union: # 合法手がなければ評価値を返す
+        return evaluate(info, player_id, turn)
+    if not common:
+        return min_value(info, depth - 1, 1 - player_id, turn + 1, alpha, beta) # 合法手がない場合は相手の手を評価する
+
     # 合法手がある場合
-    best_value = float('-inf')
-    for move in info.possible_moves(player_id): # 各可能な着手を試す
+    moves = common if common else {None} # 合法手がない場合はNoneを候補にする
+    for move in moves: # 各可能な着手を試す
+        if move is None: # パスの場合
+            value = min_value(info, depth - 1, 1 - player_id, turn + 1, alpha, beta)
+            continue
         next_worlds = set()
         for world in info.worlds:
             if move in world.get_legal_moves(player_id): # 合法手であれば、着手を適用した新しい世界を生成
@@ -65,11 +97,13 @@ def max_value(info: InfoSet, depth: int, player_id: int) -> int:
                 next_worlds.add(new_world) # 新しい盤面を次の世界として追加
         if not next_worlds:
             continue
-        value = min_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id)
-        best_value = max(best_value, value)
-    return best_value
+        value = min_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id, turn+1, alpha, beta)
+        alpha = max(alpha, value)
+        if alpha >= beta:
+            break
+    return alpha
 
-def min_value(info: InfoSet, depth: int, player_id: int) -> int:
+def min_value(info: InfoSet, depth: int, player_id: int, turn: int, alpha: float = float('-inf'), beta: float = float('inf')) -> float:
     """
     最小化プレイヤーの評価関数
     info: 情報セット
@@ -79,17 +113,25 @@ def min_value(info: InfoSet, depth: int, player_id: int) -> int:
     """
     # 再帰の終了条件または例外的に評価値を返す場合
     if depth == 0 or not info.worlds: # 探索の深さが0または情報セットが空なら評価値を返す
-        return evaluate_world(info.worlds[0], player_id) if info.worlds else 0
+        return evaluate(info, player_id, turn) if info.worlds else 0
     
     if all(world.is_game_over() for world in info.worlds): # 全ての世界がゲーム終了なら評価値を返す
-        return evaluate_world(info.worlds[0], player_id) if info.worlds else 0
-    
-    if not info.possible_moves(player_id): # 合法手がなければ評価値を返す
-        return evaluate_world(info.worlds[0], player_id) if info.worlds else 0
-    
+        return evaluate(info, player_id, turn) if info.worlds else 0
+
+    common = info.possible_moves(player_id)
+    union = info.union_moves(player_id)
+
+    if not union: # 合法手がなければ評価値を返す
+        return evaluate(info, player_id, turn)
+    if not common:
+        return max_value(info, depth - 1, 1 - player_id, turn + 1, alpha, beta) # 合法手がない場合は相手の手を評価する
+
     # 合法手がある場合
-    best_value = float('inf')
-    for move in info.possible_moves(player_id): # 各可能な着手を試す
+    moves = common if common else {None} # 合法手がない場合はNoneを候補にする
+    for move in moves: # 各可能な着手を試す
+        if move is None: # パスの場合
+            value = max_value(info, depth - 1, 1 - player_id, turn + 1, alpha, beta)
+            continue
         next_worlds = set()
         for world in info.worlds:
             if move in world.get_legal_moves(player_id): # 合法手であれば、着手を適用した新しい世界を生成
@@ -98,11 +140,13 @@ def min_value(info: InfoSet, depth: int, player_id: int) -> int:
                 next_worlds.add(new_world) # 新しい盤面を次の世界として追加
         if not next_worlds:
             continue
-        value = max_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id)
-        best_value = min(best_value, value)
-    return best_value
+        value = max_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id, turn + 1, alpha, beta)
+        beta = min(beta, value)
+        if beta <= alpha:
+            break
+    return beta
 
-def is_minimax(info: InfoSet, depth: int, player_id: int) -> int:
+def is_minimax(info: InfoSet, depth: int, player_id: int, turn: int) -> int:
     """
     情報集合ミニマックス法により評価値を計算する関数
     info: 情報セット
@@ -110,9 +154,9 @@ def is_minimax(info: InfoSet, depth: int, player_id: int) -> int:
     player_id: プレイヤーID
     戻り値: 評価値 (整数)
     """
-    return max_value(info, depth, player_id)
+    return max_value(info, depth, player_id, turn)
 
-def choose_move(info: InfoSet, depth: int, player_id: int) -> Move | None:
+def choose_move(info: InfoSet, depth: int, player_id: int, turn: int) -> Move | None:
     """
     情報集合ミニマックス法により最適な着手を選択する関数
     info: 情報セット
@@ -120,9 +164,17 @@ def choose_move(info: InfoSet, depth: int, player_id: int) -> Move | None:
     player_id: プレイヤーID
     戻り値: 最適な着手 (Move) または None
     """
-    bast_val = float('-inf')
+    best_val = float('-inf')
     best_move = None
-    for move in info.possible_moves(player_id):
+    common = info.possible_moves(player_id) # 指定プレイヤーの合法手を取得
+    union = info.union_moves(player_id) # 指定プレイヤーの全合法手を取得
+    candidate_moves = set(common) # 合法手の候補をセットにする
+    if common != union:
+        candidate_moves.add(None) # パスを候補に追加
+    if not candidate_moves:
+        candidate_moves = info.union_moves(player_id) # 合法手がない場合は、全ての合法手を候補にする
+    
+    for move in candidate_moves: # 各候補手を評価
         next_worlds = set()
         for world in info.worlds:
             if move in world.get_legal_moves(player_id):
@@ -131,9 +183,9 @@ def choose_move(info: InfoSet, depth: int, player_id: int) -> Move | None:
                 next_worlds.add(new_world)
         if not next_worlds:
             continue
-        value = min_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id)
-        if value > bast_val:
-            bast_val = value
+        value = min_value(InfoSet(list(next_worlds)), depth - 1, 1 - player_id, turn + 1)
+        if value > best_val:
+            best_val = value
             best_move = move
     return best_move
 
@@ -141,15 +193,18 @@ class IsMinimaxPlayer(Player):
     """
     情報集合ミニマックスアルゴリズムを使用して着手を選ぶプレイヤークラス
     """
-    def __init__(self, depth=3):
+    def __init__(self, depth=4):
         """
         コンストラクタ
-        depth: ミニマックスの探索の深さ (デフォルト値は3)
+        depth: ミニマックスの探索の深さ (デフォルト値は4)
         """
         super().__init__()
         self.depth = depth
         self.info_set: InfoSet = None # 情報集合を初期化する
         self.just_moved = False # 最後の着手が自分の手かどうか
+        self._pending_move: Move | None = None # 直前に送った手
+        self._info_snapshot: InfoSet | None = None # 直前の情報集合のスナップショット
+        self.turn = 0 # ターン数を初期化
     
     def name(self) -> str:
         return "IsMinimaxPlayer"
@@ -161,25 +216,16 @@ class IsMinimaxPlayer(Player):
         if self.info_set is None:
             self.info_set = InfoSet([OthelloField()]) # 初期世界として、相手の石も含めた初期盤面を設定する
         
-        move = choose_move(self.info_set, self.depth, self.player_id)
+        move = choose_move(self.info_set, self.depth, self.player_id, self.turn)
         if move is None:
             self.just_moved = False
             return "PASSED"
         
-        x, y = move
+        self._pending_move = move
+        self._info_snapshot = copy.deepcopy(self.info_set) # 現在の情報集合をスナップショットとして保存
 
-        new_worlds: list[BoardState] = []
-        for world in self.info_set.worlds:
-            if move in world.get_legal_moves(self.player_id):
-                new_world = copy.deepcopy(world)
-                new_world.place(x, y, self.player_id)
-                new_worlds.append(new_world)
-        if new_worlds:
-            self.info_set = InfoSet(new_worlds) # 新しい世界を情報集合に更新する
-         
-        self.just_moved = True # 最後の着手が自分の手であることを記録する
-        print(f"Chosen move: {x} {y}")
-        return f"MOVE {x} {y}"
+        print(f"Chosen move: {move[0]} {move[1]}")
+        return f"MOVE {move[0]} {move[1]}"
     
     def handle_message(self, msg: str) -> None:
         """
@@ -189,7 +235,18 @@ class IsMinimaxPlayer(Player):
         parts = msg.split()
         cmd = parts[0]
 
-        if cmd == Command.BOARD.value:
+        if cmd == Command.ILLEGAL_COUNT.value:
+            if self._pending_move is not None and self._info_snapshot is not None:
+                move = self._pending_move
+                legal_worlds = [
+                    world for world in self._info_snapshot.worlds
+                    if move not in world.get_legal_moves(self.player_id)
+                ]
+                self.info_set = InfoSet(legal_worlds or self._info_snapshot.worlds)
+            self._pending_move = self._info_snapshot = None # スナップショットをクリア
+            return
+
+        elif cmd == Command.BOARD.value:
             super().handle_message(msg) # player_base.pyのhandle_messageを呼び出して盤面を更新
             if self.info_set is None:
                 # 初回のBOARD受信時にのみInfoSetを初期生成する
@@ -198,58 +255,75 @@ class IsMinimaxPlayer(Player):
             else:
                 if self.just_moved:
                     self.just_moved = False # 最後の着手が自分の手であった場合はフラグをリセットする
+                    self._pending_move = self._info_snapshot = None # スナップショットをクリア
                 else:
                     # 相手の手を仮定して情報集合を更新する
                     self._update_info_set()
+            self.turn += 1
 
         elif cmd == Command.FLIP_COUNT.value:
-            parts = msg.split()
             self.last_flip_count = int(parts[1]) # 最後のひっくり返った石の数を更新
+
+            if self._pending_move is not None and self.last_flip_count > 0:
+                x, y = self._pending_move
+                worlds = []
+                for world in self.info_set.worlds:
+                    if (x, y) in world.get_legal_moves(self.player_id):
+                        new_world = copy.deepcopy(world)
+                        new_world.place(x, y, self.player_id)
+                        worlds.append(new_world)
+                if worlds:
+                    self.info_set = InfoSet(worlds)
+                else:
+                    print("Warning: No valid worlds after flip count update.")
+                self._pending_move = self._info_snapshot = None # スナップショットをクリア
+                self.just_moved = True
+            
+            else:
+                # 最後の着手が自分の手でなかった場合は、情報集合を更新しない
+                self.just_moved = False
+            return
+
         else:
             super().handle_message(msg)
 
 
     def _update_info_set(self):
-        """
-        情報集合を更新する関数
-        現在の盤面と相手の手を考慮して情報集合を更新する
-        """
         new_worlds: list[BoardState] = []
-        # サーバから返ってきた、可読な盤面情報とひっくり返った石の数を使って、情報集合を更新する
         visible_board = self.field.get_visible_board(self.player_id)
         flip_count = self.last_flip_count
 
-        # まずパスのケースを処理
         if flip_count == 0:
-            # 相手にパスがあった場合、相手に合法手なかった世界だけを残す
+            # パスは合法手の有無に依らず起こり得るので、可視盤面の不変性で整合性を取る
             for world in self.info_set.worlds:
-                if not world.get_legal_moves(1 - self.player_id):
+                if world.get_visible_board(self.player_id) == visible_board:
                     new_worlds.append(copy.deepcopy(world))
             if new_worlds:
                 self.info_set = InfoSet(new_worlds)
-                return
-        
-            # 一致する世界がない場合は、古い情報集合をそのまま保持する
+            # 一致が無ければ、古い集合を保持（破綻防止）
             return
 
         for world in self.info_set.worlds:
-            # worldは過去における仮説的な盤面情報を保持している
-            for move in world.get_legal_moves(opp := 1 - self.player_id):
-                # 相手の手を仮定して新しい盤面を生成
+            opp = 1 - self.player_id
+            for move in world.get_legal_moves(opp):
                 new_world = copy.deepcopy(world)
-                flips = new_world.place(move[0], move[1], opp) # 相手の手を適用してひっくり返る石の数を取得
-
-                # 可読な盤面とひっくり返った石の数を考慮して、情報集合に追加
+                flips = new_world.place(move[0], move[1], opp)
                 if new_world.get_visible_board(self.player_id) == visible_board and flips == flip_count:
                     new_worlds.append(new_world)
-        
+
         if new_worlds:
             self.info_set = InfoSet(new_worlds)
         else:
-            # 相手の手が合法手でない場合は、情報集合をそのまま保持し、
-            # 警告を表示する
-            print("No valid moves found for opponent, keeping current state.")
-    
+            # 整合性が取れない場合は、現在の情報集合を保持
+            for world in self.info_set.worlds:
+                new_world = copy.deepcopy(world)
+                if new_world.get_visible_board(self.player_id) == visible_board:
+                    new_worlds.append(new_world)
+            if new_worlds:
+                self.info_set = InfoSet(new_worlds)
+            else:
+                print("Warning: No matching worlds found after opponent's move. Keeping current info set.")
+
 if __name__=="__main__":
     host,port = sys.argv[1], int(sys.argv[2]) # コマンドライン引数からホストとポートを取得
     play_game(host, port, IsMinimaxPlayer()) # 情報集合ミニマックスプレイヤーでゲームを開始
