@@ -37,9 +37,9 @@ class RandomPlayer(Player):
         """
         self._update_illegal_streak()
 
-        # 30 連続不正手 → パス
-        if self._consec_illegal >= 30:
-            print("* auto-pass after 30 consecutive illegal moves *")
+        # 100 連続不正手 → パス
+        if self._consec_illegal >= 100:
+            print("* auto-pass after 100 consecutive illegal moves *")
             return "PASSED"
 
         size = self.field.SIZE # 盤面のサイズを取得
