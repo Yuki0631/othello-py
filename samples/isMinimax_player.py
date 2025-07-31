@@ -146,16 +146,6 @@ def min_value(info: InfoSet, depth: int, player_id: int, turn: int, alpha: float
             break
     return beta
 
-def is_minimax(info: InfoSet, depth: int, player_id: int, turn: int) -> int:
-    """
-    情報集合ミニマックス法により評価値を計算する関数
-    info: 情報セット
-    depth: 探索の深さ
-    player_id: プレイヤーID
-    戻り値: 評価値 (整数)
-    """
-    return max_value(info, depth, player_id, turn)
-
 def choose_move(info: InfoSet, depth: int, player_id: int, turn: int) -> Move | None:
     """
     情報集合ミニマックス法により最適な着手を選択する関数
